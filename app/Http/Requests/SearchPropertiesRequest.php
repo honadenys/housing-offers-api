@@ -8,6 +8,7 @@ use App\Data\PropertySearch;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use LogicException;
 
 class SearchPropertiesRequest extends FormRequest
 {
@@ -32,12 +33,14 @@ class SearchPropertiesRequest extends FormRequest
 
     public function checkInDate(): CarbonImmutable
     {
-        return CarbonImmutable::createFromFormat('!Y-m-d', $this->validated('check_in'));
+        return CarbonImmutable::createFromFormat('!Y-m-d', $this->validated('check_in'))
+            ?? throw new LogicException('Validated check-in date could not be parsed.');
     }
 
     public function checkOutDate(): CarbonImmutable
     {
-        return CarbonImmutable::createFromFormat('!Y-m-d', $this->validated('check_out'));
+        return CarbonImmutable::createFromFormat('!Y-m-d', $this->validated('check_out'))
+            ?? throw new LogicException('Validated check-out date could not be parsed.');
     }
 
     public function filters(): PropertySearch
@@ -47,9 +50,9 @@ class SearchPropertiesRequest extends FormRequest
             checkOut: $this->checkOutDate(),
             guests: (int) $this->validated('guests'),
             city: $this->validated('city'),
-            currency: $this->validated('currency'),
             perPage: (int) ($this->validated('per_page') ?? 15),
             page: (int) ($this->validated('page') ?? 1),
+            currency: $this->validated('currency'),
         );
     }
 }

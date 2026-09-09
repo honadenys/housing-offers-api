@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\ImportStatus;
+use Database\Factories\ImportFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -12,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Import extends Model
 {
+    /** @use HasFactory<ImportFactory> */
     use HasFactory;
 
     protected $fillable = [
@@ -26,6 +28,7 @@ class Import extends Model
         'completed_at',
     ];
 
+    /** @return array<string, string> */
     protected function casts(): array
     {
         return [
@@ -38,11 +41,13 @@ class Import extends Model
         ];
     }
 
+    /** @return BelongsTo<Supplier, $this> */
     public function supplier(): BelongsTo
     {
         return $this->belongsTo(Supplier::class);
     }
 
+    /** @return HasMany<Offer, $this> */
     public function offers(): HasMany
     {
         return $this->hasMany(Offer::class);

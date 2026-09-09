@@ -1,4 +1,4 @@
-name: Tests
+name: Quality and tests
 on: [push, pull_request]
 permissions:
   contents: read
@@ -10,8 +10,6 @@ jobs:
       - run: cp .env.example .env
       - run: docker compose build app
       - run: docker compose run --rm -T app php artisan key:generate
-      - run: docker compose run --rm -T app composer validate --strict
-      - run: docker compose run --rm -T app vendor/bin/pint --test
-      - run: bin/test
+      - run: bin/check
       - if: always()
         run: docker compose down -v

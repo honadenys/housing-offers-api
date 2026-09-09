@@ -14,6 +14,7 @@ use Throwable;
 
 final class ImportService
 {
+    /** @param array<string, mixed> $payload */
     public function createAndDispatch(array $payload): Import
     {
         $supplier = Supplier::query()

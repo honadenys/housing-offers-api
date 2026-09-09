@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use Database\Factories\OfferFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Offer extends Model
 {
+    /** @use HasFactory<OfferFactory> */
     use HasFactory;
 
     protected $fillable = [
@@ -27,6 +29,7 @@ class Offer extends Model
         'expires_at',
     ];
 
+    /** @return array<string, string> */
     protected function casts(): array
     {
         return [
@@ -39,21 +42,25 @@ class Offer extends Model
         ];
     }
 
+    /** @return BelongsTo<Supplier, $this> */
     public function supplier(): BelongsTo
     {
         return $this->belongsTo(Supplier::class);
     }
 
+    /** @return BelongsTo<Import, $this> */
     public function import(): BelongsTo
     {
         return $this->belongsTo(Import::class);
     }
 
+    /** @return BelongsTo<Property, $this> */
     public function property(): BelongsTo
     {
         return $this->belongsTo(Property::class);
     }
 
+    /** @return HasMany<Reservation, $this> */
     public function reservations(): HasMany
     {
         return $this->hasMany(Reservation::class);

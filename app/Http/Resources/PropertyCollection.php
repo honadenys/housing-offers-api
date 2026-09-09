@@ -8,14 +8,17 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\ResourceCollection;
 use Illuminate\Pagination\Paginator;
+use Illuminate\Support\Collection;
 
+/** @property Collection<int, PropertyResource> $collection */
 class PropertyCollection extends ResourceCollection
 {
     public $collects = PropertyResource::class;
 
+    /** @return array<string, mixed> */
     public function toArray(Request $request): array
     {
-        /** @var Paginator $paginator */
+        /** @var Paginator<int, PropertyResource> $paginator */
         $paginator = $this->resource;
 
         return [

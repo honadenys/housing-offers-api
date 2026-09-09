@@ -159,13 +159,36 @@ No authentication, cancellation, hold expiration, FX conversion, or external sup
 
 ## Quality checks
 
+Run every static check and the MySQL Pest suite with the same command used by CI:
+
 ```bash
-docker compose exec app vendor/bin/pint --test
-docker compose exec app composer validate --strict
+bin/check
 ```
+
+On an existing checkout, synchronize the Docker vendor volume after pulling dependency changes:
+
+```bash
+docker compose run --rm -T app composer install --no-interaction
+```
+
+Individual checks and explicit fixes:
+
+```bash
+docker compose run --rm -T app composer quality
+docker compose run --rm -T app composer phpstan
+docker compose run --rm -T app composer rector
+docker compose run --rm -T app composer deptrac
+docker compose run --rm -T app composer rector:fix
+docker compose run --rm -T app composer lint:fix
+```
+
+- PHPStan level 8 with [Larastan](https://github.com/larastan/larastan) checks application code, migrations, factories, seeders, routes, and application bootstrap. Model casts are parsed from `casts()`; relationships and query projections have explicit types. No baseline or ignored errors. Pest scenarios run through the test runner, rather than PHPStan.
+- [Rector](https://getrector.com/documentation/set-lists) checks application and test code for PHP 8.2 upgrades, dead code, and code-quality improvements. The normal command is a dry run; only `rector:fix` changes files. Two rules that replace null/truthiness checks with `instanceof` are disabled deliberately. Run Pint after applying Rector.
+- [Deptrac](https://deptrac.github.io/deptrac/configuration/) checks dependencies within `app/`. Actions may call services and use requests/resources; services and jobs may use models, but cannot depend on HTTP actions, requests, or resources. Models cannot depend on services or jobs. Framework dependencies and model factories are explicitly allowed. Violations and uncovered dependencies fail the check.
+- Pint enforces formatting. Composer validates package metadata and the lock file. Tool caches are ignored by Git.
 
 Tests use isolated data and cover supplier-scoped identifiers, shared properties, mixed currencies, malformed payloads, storage bounds, and completed-job redelivery after stock changes. Scaffold example tests are omitted.
 
-GitHub Actions runs Composer validation, Pint, and the same MySQL suite after publication. CI has not run remotely yet.
+GitHub Actions runs `bin/check` on pushes and pull requests after publication. CI has not run remotely yet.
 
 Review decisions and scope: [review decisions](docs/review-decisions.md).

@@ -1,0 +1,55 @@
+deptrac:
+  paths:
+    - ./app
+  analyser:
+    types:
+      - class
+      - use
+  layers:
+    - name: Actions
+      collectors:
+        - { type: classLike, value: '^App\\Http\\Actions\\' }
+    - name: Requests
+      collectors:
+        - { type: classLike, value: '^App\\Http\\Requests\\' }
+    - name: Resources
+      collectors:
+        - { type: classLike, value: '^App\\Http\\Resources\\' }
+    - name: Services
+      collectors:
+        - { type: classLike, value: '^App\\Services\\' }
+    - name: Jobs
+      collectors:
+        - { type: classLike, value: '^App\\Jobs\\' }
+    - name: Console
+      collectors:
+        - { type: classLike, value: '^App\\Console\\' }
+    - name: Models
+      collectors:
+        - { type: classLike, value: '^App\\Models\\' }
+    - name: Data
+      collectors:
+        - { type: classLike, value: '^App\\Data\\' }
+    - name: Enums
+      collectors:
+        - { type: classLike, value: '^App\\Enums\\' }
+    - name: Exceptions
+      collectors:
+        - { type: classLike, value: '^App\\Exceptions\\' }
+    - name: Vendor
+      collectors:
+        - { type: classLike, value: '^(Illuminate|Carbon|Symfony)\\' }
+    - name: Factories
+      collectors:
+        - { type: classLike, value: '^Database\\Factories\\' }
+  ruleset:
+    Actions: [Vendor, Requests, Resources, Services, Models, Exceptions]
+    Requests: [Vendor, Data]
+    Resources: [Vendor, Models, Enums]
+    Services: [Vendor, Models, Data, Enums, Exceptions, Jobs]
+    Jobs: [Vendor, Models, Enums]
+    Console: [Vendor, Jobs, Models, Enums]
+    Models: [Enums, Vendor, Factories]
+    Data: [Vendor]
+    Enums: []
+    Exceptions: [Vendor]

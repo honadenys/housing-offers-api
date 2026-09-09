@@ -4,3 +4,6 @@ vendor
 node_modules
 database/database.sqlite
 storage/logs/*.log
+.deptrac.cache*
+storage/framework/cache/phpstan
+storage/framework/cache/rector

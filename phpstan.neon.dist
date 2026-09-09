@@ -1,0 +1,13 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    level: 8
+    parseModelCastsMethod: true
+    phpVersion: 80200
+    paths:
+        - app
+        - database
+        - routes
+        - bootstrap/app.php
+    tmpDir: storage/framework/cache/phpstan

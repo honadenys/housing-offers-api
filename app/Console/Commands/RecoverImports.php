@@ -31,7 +31,7 @@ final class RecoverImports extends Command
         DB::transaction(function () use ($candidate): void {
             $import = Import::query()->lockForUpdate()->findOrFail($candidate->id);
 
-            if ($import->updated_at->greaterThanOrEqualTo(now()->subMinutes(5))) {
+            if ($import->updated_at === null || $import->updated_at->greaterThanOrEqualTo(now()->subMinutes(5))) {
                 return;
             }
 

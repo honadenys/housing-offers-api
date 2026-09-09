@@ -33,9 +33,7 @@ test('import is accepted and queued', function () {
         'status' => ImportStatus::Pending->value,
     ]);
 
-    Queue::assertPushed(ProcessImport::class, function (ProcessImport $job) use ($importId): bool {
-        return $job->importId === $importId;
-    });
+    Queue::assertPushed(ProcessImport::class, fn (ProcessImport $job): bool => $job->importId === $importId);
 });
 
 test('duplicate import returns existing record without duplicate job', function () {

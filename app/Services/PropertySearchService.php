@@ -12,6 +12,7 @@ use Illuminate\Pagination\Paginator;
 
 final class PropertySearchService
 {
+    /** @return Paginator<int, Property> */
     public function search(PropertySearch $filters): Paginator
     {
         $rankedOffers = Offer::query()

@@ -11,9 +11,17 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
  * @mixin Property
+ *
+ * @property-read int $best_offer_id
+ * @property-read string $best_offer_supplier
+ * @property-read int $best_offer_price
+ * @property-read string $best_offer_currency
+ * @property-read int $best_offer_available_units
+ * @property-read string $best_offer_expires_at
  */
 class PropertyResource extends JsonResource
 {
+    /** @return array<string, mixed> */
     public function toArray(Request $request): array
     {
         return [

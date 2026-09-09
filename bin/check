@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+set -eu
+
+cd "$(dirname "$0")/.."
+
+docker compose run --rm -T app composer quality
+exec bin/test "$@"

@@ -15,7 +15,9 @@
         "predis/predis": "^2.2"
     },
     "require-dev": {
+        "deptrac/deptrac": "^4.7",
         "fakerphp/faker": "^1.23",
+        "larastan/larastan": "^3.0",
         "laravel/pail": "^1.2.2",
         "laravel/pint": "^1.24",
         "laravel/sail": "^1.41",
@@ -23,7 +25,9 @@
         "nunomaduro/collision": "^8.6",
         "pestphp/pest": "^3.0",
         "pestphp/pest-plugin-laravel": "^3.0",
-        "phpunit/phpunit": "^11.5.50"
+        "phpstan/phpstan": "^2.1",
+        "phpunit/phpunit": "^11.5.50",
+        "rector/rector": "^2.0"
     },
     "autoload": {
         "psr-4": {
@@ -59,6 +63,19 @@
         ],
         "pre-package-uninstall": [
             "Illuminate\\Foundation\\ComposerScripts::prePackageUninstall"
+        ],
+        "lint": "pint --test",
+        "lint:fix": "pint",
+        "phpstan": "phpstan analyse --configuration=phpstan.neon.dist --memory-limit=512M --no-progress",
+        "rector": "rector process --config=rector.php --dry-run --no-progress-bar",
+        "rector:fix": "rector process --config=rector.php --no-progress-bar",
+        "deptrac": "deptrac analyse --config-file=deptrac.yaml --no-progress --fail-on-uncovered",
+        "quality": [
+            "@composer validate --strict",
+            "@lint",
+            "@phpstan",
+            "@rector",
+            "@deptrac"
         ]
     },
     "extra": {

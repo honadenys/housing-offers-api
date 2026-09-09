@@ -20,7 +20,7 @@ class OfferFactory extends Factory
 
         return [
             'import_id' => Import::factory(),
-            'supplier_id' => fn (array $attributes): int => Import::findOrFail($attributes['import_id'])->supplier_id,
+            'supplier_id' => fn (array $attributes): int => Import::findOrFail((int) $attributes['import_id'])->supplier_id,
             'property_id' => Property::factory(),
             'external_id' => 'offer-'.$this->faker->unique()->numerify('########'),
             'check_in' => $checkIn->toDateString(),

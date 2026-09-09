@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\DB;
 
 final class ReservationService
 {
+    /** @param array<string, mixed> $data */
     public function reserve(Offer $offer, array $data): Reservation
     {
         try {
@@ -38,6 +39,7 @@ final class ReservationService
         }
     }
 
+    /** @param array<string, mixed> $data */
     private function existingReservation(Offer $offer, array $data): ?Reservation
     {
         $reservation = Reservation::query()->where('client_reference', $data['client_reference'])->first();
