@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+cd "$(dirname "$0")/.."
+docker compose up -d --wait mysql redis
+docker compose exec -T mysql mysql -uroot -e 'CREATE DATABASE IF NOT EXISTS housing_api_test'
+docker compose run --rm -T \
+  -e APP_ENV=testing -e DB_CONNECTION=mysql -e DB_DATABASE=housing_api_test \
+  -e DB_URL= -e QUEUE_CONNECTION=sync -e CACHE_STORE=array \
+  app php artisan test "$@"

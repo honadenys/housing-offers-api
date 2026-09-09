@@ -1,0 +1,17 @@
+name: Tests
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cp .env.example .env
+      - run: docker compose build app
+      - run: docker compose run --rm -T app php artisan key:generate
+      - run: docker compose run --rm -T app composer validate --strict
+      - run: docker compose run --rm -T app vendor/bin/pint --test
+      - run: bin/test
+      - if: always()
+        run: docker compose down -v
