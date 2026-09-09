@@ -50,7 +50,6 @@ final class ImportService
         try {
             ProcessImport::dispatch($import->id)->onQueue('imports');
         } catch (Throwable $exception) {
-            // The committed payload remains available to imports:recover.
             Log::error('Import dispatch failed; recovery will retry.', [
                 'import_id' => $import->id,
                 'exception' => $exception,

@@ -8,20 +8,19 @@ use App\Enums\ImportStatus;
 use App\Models\Import;
 use App\Models\Offer;
 use App\Models\Property;
+use App\Models\Supplier;
 use Carbon\CarbonImmutable;
-use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 final class ProcessImport implements ShouldBeUnique, ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Queueable;
 
     public int $tries = 1;
 
@@ -87,91 +86,81 @@ final class ProcessImport implements ShouldBeUnique, ShouldQueue
     private function processImportOffers(Import $import): void
     {
         DB::transaction(function () use ($import): void {
+            Supplier::query()->lockForUpdate()->findOrFail($import->supplier_id);
             $import = Import::query()->lockForUpdate()->findOrFail($import->id);
 
             if ($this->importIsFinished($import)) {
                 return;
             }
 
-            $offers = $this->readOffersFromImport($import);
+            $offers = $import->payload['offers'];
 
-            foreach ($offers as $offerData) {
-                $this->saveOfferFromImport($import, $offerData);
+            foreach (array_chunk($offers, 500) as $chunk) {
+                $this->upsertOffers($import, $chunk);
             }
 
             $this->markImportAsCompleted($import, count($offers));
         }, attempts: 3);
     }
 
-    /**
-     * @return array<int, array<string, mixed>>
-     */
-    private function readOffersFromImport(Import $import): array
+    /** @param list<array<string, mixed>> $offers */
+    private function upsertOffers(Import $import, array $offers): void
     {
-        $payload = $import->fresh()->payload;
+        $newerOfferIds = Offer::query()
+            ->join('imports', 'imports.id', '=', 'offers.import_id')
+            ->where('offers.supplier_id', $import->supplier_id)
+            ->whereIn('offers.external_id', array_column($offers, 'external_id'))
+            ->where(function (Builder $query) use ($import): void {
+                $query->where('imports.sent_at', '>', $import->sent_at)
+                    ->orWhere(function (Builder $query) use ($import): void {
+                        $query->where('imports.sent_at', $import->sent_at)
+                            ->where('imports.id', '>=', $import->id);
+                    });
+            })
+            ->pluck('offers.external_id')
+            ->all();
 
-        return $payload['offers'] ?? [];
-    }
+        $newerOfferIds = array_fill_keys($newerOfferIds, true);
+        $offers = array_values(array_filter(
+            $offers,
+            fn (array $offer): bool => ! isset($newerOfferIds[$offer['external_id']]),
+        ));
 
-    /**
-     * @param  array<string, mixed>  $offerData
-     */
-    private function saveOfferFromImport(Import $import, array $offerData): void
-    {
-        $property = $this->saveProperty($offerData['property']);
-        $offerAttributes = $this->offerAttributes($import, $property, $offerData);
+        if ($offers === []) {
+            return;
+        }
 
-        $offer = Offer::query()->createOrFirst(
-            [
-                'supplier_id' => $import->supplier_id,
-                'external_id' => $offerData['external_id'],
-            ],
-            $offerAttributes,
-        );
+        $properties = [];
+        foreach ($offers as $offer) {
+            $property = $offer['property'];
+            $properties[$property['code']] = [
+                'code' => $property['code'],
+                'name' => $property['name'],
+                'city' => $property['city'],
+            ];
+        }
 
-        $offer->fill($offerAttributes)->save();
-    }
+        Property::query()->upsert(array_values($properties), ['code'], ['name', 'city', 'updated_at']);
+        $propertyIds = Property::query()->whereIn('code', array_keys($properties))->pluck('id', 'code');
 
-    /**
-     * @param  array<string, mixed>  $propertyData
-     */
-    private function saveProperty(array $propertyData): Property
-    {
-        $propertyAttributes = [
-            'name' => $propertyData['name'],
-            'city' => $propertyData['city'],
-        ];
-
-        $property = Property::query()->createOrFirst(
-            ['code' => $propertyData['code']],
-            $propertyAttributes,
-        );
-
-        $property->fill($propertyAttributes)->save();
-
-        return $property;
-    }
-
-    /**
-     * @param  array<string, mixed>  $offerData
-     * @return array<string, mixed>
-     */
-    private function offerAttributes(
-        Import $import,
-        Property $property,
-        array $offerData,
-    ): array {
-        return [
+        $records = array_map(fn (array $offer): array => [
+            'supplier_id' => $import->supplier_id,
             'import_id' => $import->id,
-            'property_id' => $property->id,
-            'check_in' => $offerData['check_in'],
-            'check_out' => $offerData['check_out'],
-            'max_guests' => $offerData['max_guests'],
-            'price' => $offerData['price'],
-            'currency' => $offerData['currency'],
-            'available_units' => $offerData['available_units'],
-            'expires_at' => CarbonImmutable::parse($offerData['expires_at'])->utc(),
-        ];
+            'property_id' => $propertyIds[$offer['property']['code']],
+            'external_id' => $offer['external_id'],
+            'check_in' => $offer['check_in'],
+            'check_out' => $offer['check_out'],
+            'max_guests' => $offer['max_guests'],
+            'price' => $offer['price'],
+            'currency' => $offer['currency'],
+            'available_units' => $offer['available_units'],
+            'expires_at' => CarbonImmutable::parse($offer['expires_at'])->utc()->toDateTimeString(),
+        ], $offers);
+
+        Offer::query()->upsert($records, ['supplier_id', 'external_id'], [
+            'import_id', 'property_id', 'check_in', 'check_out', 'max_guests',
+            'price', 'currency', 'available_units', 'expires_at', 'updated_at',
+        ]);
     }
 
     private function importIsFinished(Import $import): bool

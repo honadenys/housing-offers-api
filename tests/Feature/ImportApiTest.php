@@ -7,7 +7,9 @@ use App\Jobs\ProcessImport;
 use App\Models\Import;
 use App\Models\Offer;
 use App\Models\Supplier;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 
 test('import is accepted and queued', function () {
@@ -256,7 +258,7 @@ test('import accepts different currencies and preserves them', function () {
     $payload = importPayload();
     $payload['offers'][] = $payload['offers'][0];
     $payload['offers'][1]['external_id'] = 'usd-offer';
-    $payload['offers'][1]['currency'] = 'usd';
+    $payload['offers'][1]['currency'] = 'USD';
 
     $response = $this->postJson('/api/imports', $payload)->assertAccepted();
     (new ProcessImport($response->json('data.id')))->handle();
@@ -357,4 +359,100 @@ test('supplier timestamps with offsets are stored as UTC instants', function () 
     $this->assertDatabaseHas('offers', ['expires_at' => '2026-09-10 21:00:00']);
     $this->getJson('/api/imports/'.$response->json('data.id'))
         ->assertOk()->assertJsonPath('data.sent_at', '2026-09-01T10:00:00+00:00');
+});
+
+test('currency must be uppercase and checkout belongs to its own offer', function () {
+    Supplier::factory()->create(['code' => 'supplier-a']);
+    Queue::fake();
+    $payload = importPayload();
+    $payload['offers'][0]['currency'] = 'eur';
+    $payload['offers'][] = [...$payload['offers'][0], 'external_id' => 'second', 'check_in' => '2026-11-10', 'check_out' => '2026-11-09', 'currency' => 'EUR'];
+
+    $this->postJson('/api/imports', $payload)->assertUnprocessable()
+        ->assertJsonValidationErrors(['offers.0.currency', 'offers.1.check_out'])
+        ->assertJsonMissingValidationErrors('offers.0.check_out');
+    Queue::assertNothingPushed();
+});
+
+test('older imports cannot overwrite newer offer data or restore booked stock', function () {
+    Supplier::factory()->create(['code' => 'supplier-a']);
+    Queue::fake();
+    $newer = importPayload();
+    $newer['sent_at'] = '2026-09-09T10:05:00Z';
+    $newer['offers'][0]['available_units'] = 1;
+    $newerId = $this->postJson('/api/imports', $newer)->assertAccepted()->json('data.id');
+    (new ProcessImport($newerId))->handle();
+    $offer = Offer::firstOrFail();
+    $this->postJson('/api/offers/'.$offer->id.'/reservations', [
+        'client_reference' => 'stale-import-order', 'customer_name' => 'John Smith', 'customer_email' => 'john@example.com',
+    ])->assertCreated();
+
+    $older = importPayload();
+    $older['external_import_id'] = 'delayed-import';
+    $older['offers'][0]['price'] = 1;
+    $older['offers'][0]['property']['city'] = 'Outdated city';
+    $olderId = $this->postJson('/api/imports', $older)->assertAccepted()->json('data.id');
+    (new ProcessImport($olderId))->handle();
+
+    $this->assertDatabaseHas('offers', ['id' => $offer->id, 'import_id' => $newerId, 'price' => 72500, 'available_units' => 0]);
+    $this->assertDatabaseHas('properties', ['code' => 'BCN-0001', 'city' => 'Barcelona']);
+    $this->getJson('/api/imports/'.$olderId)->assertOk()->assertJsonPath('data.status', 'completed');
+});
+
+test('large imports use bounded batches and rollback earlier batches on failure', function () {
+    $payload = importPayload();
+    $template = $payload['offers'][0];
+    $payload['offers'] = array_map(fn (int $i): array => [...$template, 'external_id' => 'batch-'.$i], range(1, 501));
+    $import = Import::factory()->create(['payload' => $payload, 'total_offers' => 501]);
+    $queries = [];
+    DB::listen(function ($query) use (&$queries): void {
+        $queries[] = $query->sql;
+    });
+
+    (new ProcessImport($import->id))->handle();
+    $this->assertDatabaseCount('offers', 501);
+    $this->assertDatabaseCount('properties', 1);
+    expect(count($queries))->toBeLessThan(30);
+    expect($import->fresh()->processed_offers)->toBe(501);
+
+    $payload['offers'][500]['property']['name'] = null;
+    $failed = Import::factory()->create(['payload' => $payload, 'total_offers' => 501]);
+    expect(fn () => (new ProcessImport($failed->id))->handle())->toThrow(QueryException::class);
+    $this->assertDatabaseCount('offers', 501);
+    $this->assertDatabaseMissing('offers', ['supplier_id' => $failed->supplier_id]);
+    expect($failed->fresh()->status)->toBe(ImportStatus::Failed);
+});
+
+test('opaque identifiers retain case when batching and checking stale imports', function () {
+    Supplier::factory()->create(['code' => 'supplier-a']);
+    Queue::fake();
+    $payload = importPayload();
+    $payload['offers'][0]['external_id'] = 'Offer-A';
+    $payload['offers'][0]['property']['code'] = 'Property-A';
+    $id = $this->postJson('/api/imports', $payload)->assertAccepted()->json('data.id');
+    (new ProcessImport($id))->handle();
+
+    $payload['external_import_id'] = 'another-import';
+    $payload['offers'][0]['external_id'] = 'offer-a';
+    $payload['offers'][0]['property']['code'] = 'property-a';
+    $second = $this->postJson('/api/imports', $payload)->assertAccepted()->json('data.id');
+    (new ProcessImport($second))->handle();
+    $this->assertDatabaseCount('offers', 2);
+    $this->assertDatabaseCount('properties', 2);
+});
+
+test('equal supplier timestamps use import id to resolve reversed processing order', function () {
+    Supplier::factory()->create(['code' => 'supplier-a']);
+    Queue::fake();
+    $payload = importPayload();
+    $first = $this->postJson('/api/imports', $payload)->assertAccepted()->json('data.id');
+    $payload['external_import_id'] = 'same-time-later-arrival';
+    $payload['offers'][0]['price'] = 65000;
+    $second = $this->postJson('/api/imports', $payload)->assertAccepted()->json('data.id');
+
+    (new ProcessImport($second))->handle();
+    (new ProcessImport($first))->handle();
+
+    $this->assertDatabaseCount('offers', 1);
+    $this->assertDatabaseHas('offers', ['import_id' => $second, 'price' => 65000]);
 });
