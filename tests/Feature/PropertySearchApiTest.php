@@ -6,6 +6,7 @@ use App\Models\Import;
 use App\Models\Offer;
 use App\Models\Property;
 use App\Models\Supplier;
+use Illuminate\Support\Facades\DB;
 
 test('search returns cheapest matching offer per property', function () {
     $supplierA = Supplier::factory()->create(['code' => 'supplier-a']);
@@ -141,3 +142,48 @@ function propertySearchOffer(
         'expires_at' => now()->addDay(),
     ], $overrides));
 }
+
+test('city zero is a filter and omitted city searches across cities', function () {
+    $supplier = Supplier::factory()->create();
+    $zero = Property::factory()->create(['city' => '0']);
+    $barcelona = Property::factory()->create(['city' => 'Barcelona']);
+    propertySearchOffer($supplier, $zero, 50000);
+    propertySearchOffer($supplier, $barcelona, 60000);
+    $query = 'check_in=2026-10-10&check_out=2026-10-15&guests=2';
+
+    $this->getJson('/api/properties?'.$query.'&city=0')
+        ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.city', '0');
+    $this->getJson('/api/properties?'.$query)->assertOk()->assertJsonCount(2, 'data');
+});
+
+test('search rejects past check-in and excessive guests', function () {
+    $this->getJson('/api/properties?check_in=2026-09-08&check_out=2026-10-15&guests=31')
+        ->assertUnprocessable()->assertJsonValidationErrors(['check_in', 'guests']);
+    $this->getJson('/api/properties?check_in=2026-09-09&check_out=2026-09-10&guests=30')
+        ->assertOk();
+});
+
+test('search does not count all ranked offers for pagination', function () {
+    $queries = [];
+    DB::listen(function ($query) use (&$queries): void {
+        $queries[] = $query->sql;
+    });
+
+    $this->getJson('/api/properties?check_in=2026-10-10&check_out=2026-10-15&guests=2')->assertOk();
+
+    $searchQueries = array_filter($queries, fn (string $sql): bool => str_contains($sql, 'offer_rank'));
+    expect($searchQueries)->toHaveCount(1);
+    expect(strtolower(implode(' ', $searchQueries)))->not->toContain('count(');
+});
+
+test('currency filtering ranks only offers in the requested currency', function () {
+    $supplier = Supplier::factory()->create();
+    $property = Property::factory()->create();
+    propertySearchOffer($supplier, $property, 1000, ['currency' => 'USD']);
+    $eur = propertySearchOffer($supplier, $property, 2000, ['currency' => 'EUR']);
+
+    $this->getJson('/api/properties?check_in=2026-10-10&check_out=2026-10-15&guests=2&currency=EUR')
+        ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.best_offer.id', $eur->id);
+    $this->getJson('/api/properties?check_in=2026-10-10&check_out=2026-10-15&guests=2&currency=GBP')
+        ->assertOk()->assertJsonCount(0, 'data');
+});

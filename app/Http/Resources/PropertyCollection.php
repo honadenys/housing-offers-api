@@ -7,7 +7,7 @@ namespace App\Http\Resources;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\ResourceCollection;
-use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Pagination\Paginator;
 
 class PropertyCollection extends ResourceCollection
 {
@@ -15,7 +15,7 @@ class PropertyCollection extends ResourceCollection
 
     public function toArray(Request $request): array
     {
-        /** @var LengthAwarePaginator $paginator */
+        /** @var Paginator $paginator */
         $paginator = $this->resource;
 
         return [

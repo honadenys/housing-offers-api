@@ -14,6 +14,6 @@ final class SearchPropertiesAction
         SearchPropertiesRequest $request,
         PropertySearchService $service,
     ): PropertyCollection {
-        return new PropertyCollection($service->search($request->validated()));
+        return new PropertyCollection($service->search($request->filters())->withQueryString());
     }
 }

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Http\Requests;
 
+use App\Data\PropertySearch;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Validator;
+use Illuminate\Validation\Rule;
 
 class SearchPropertiesRequest extends FormRequest
 {
@@ -14,43 +16,40 @@ class SearchPropertiesRequest extends FormRequest
         return true;
     }
 
-    protected function prepareForValidation(): void
-    {
-        if (is_string($this->input('city'))) {
-            $this->merge(['city' => trim($this->input('city'))]);
-        }
-    }
-
+    /** @return array<string, array<int, mixed>> */
     public function rules(): array
     {
         return [
+            'currency' => ['nullable', 'string', 'size:3', 'alpha:ascii', 'uppercase'],
             'city' => ['nullable', 'string', 'max:100'],
-            'check_in' => ['required', 'date_format:Y-m-d'],
-            'check_out' => ['required', 'date_format:Y-m-d'],
-            'guests' => ['required', 'integer', 'min:1'],
+            'check_in' => ['bail', 'required', 'date_format:Y-m-d', 'after_or_equal:today'],
+            'check_out' => ['required', 'date_format:Y-m-d', Rule::when(is_string($this->input('check_in')), 'after:check_in')],
+            'guests' => ['required', 'integer', 'min:1', 'max:30'],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ];
     }
 
-    public function after(): array
+    public function checkInDate(): CarbonImmutable
     {
-        return [
-            function (Validator $validator): void {
-                if ($validator->errors()->isNotEmpty()) {
-                    return;
-                }
+        return CarbonImmutable::createFromFormat('!Y-m-d', $this->validated('check_in'));
+    }
 
-                $checkIn = date_create_from_format('!Y-m-d', (string) $this->input('check_in'));
-                $checkOut = date_create_from_format('!Y-m-d', (string) $this->input('check_out'));
+    public function checkOutDate(): CarbonImmutable
+    {
+        return CarbonImmutable::createFromFormat('!Y-m-d', $this->validated('check_out'));
+    }
 
-                if ($checkIn !== false && $checkOut !== false && $checkOut <= $checkIn) {
-                    $validator->errors()->add(
-                        'check_out',
-                        'The check_out date must be after check_in.',
-                    );
-                }
-            },
-        ];
+    public function filters(): PropertySearch
+    {
+        return new PropertySearch(
+            checkIn: $this->checkInDate(),
+            checkOut: $this->checkOutDate(),
+            guests: (int) $this->validated('guests'),
+            city: $this->validated('city'),
+            currency: $this->validated('currency'),
+            perPage: (int) ($this->validated('per_page') ?? 15),
+            page: (int) ($this->validated('page') ?? 1),
+        );
     }
 }
