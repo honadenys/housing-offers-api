@@ -32,4 +32,18 @@ class OfferFactory extends Factory
             'expires_at' => now()->addDay(),
         ];
     }
+
+    public function soldOut(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'available_units' => 0,
+        ]);
+    }
+
+    public function expired(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'expires_at' => now()->subMinute(),
+        ]);
+    }
 }

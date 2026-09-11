@@ -4,44 +4,73 @@ declare(strict_types=1);
 
 use Database\Seeders\SupplierSeeder;
 
-test('customer finds an imported offer and books its final unit', function () {
-    $this->seed(SupplierSeeder::class);
-    $payload = [
-        'supplier' => 'supplier-a',
-        'external_import_id' => 'customer-journey',
-        'sent_at' => now()->toIso8601String(),
-        'offers' => [[
-            'external_id' => 'last-apartment',
-            'property' => ['code' => 'BCN-JOURNEY', 'name' => 'Central apartment', 'city' => 'Barcelona'],
+describe('Customer Booking Journey', function () {
+    it('allows a customer to find an offer, book the last available unit, retry idempotently, and see it become sold out', function () {
+        $this->seed(SupplierSeeder::class);
+
+        $importResponse = $this->postJson('/api/imports', validImportPayload([
+            'supplier' => 'supplier-a',
+            'external_import_id' => 'customer-journey',
+            'offers' => [
+                validOfferPayload([
+                    'external_id' => 'last-apartment',
+                    'property' => [
+                        'code' => 'BCN-JOURNEY',
+                        'name' => 'Central apartment',
+                        'city' => 'Barcelona',
+                    ],
+                    'available_units' => 1,
+                    'price' => 50000,
+                ]),
+            ],
+        ]));
+
+        $importResponse->assertAccepted();
+        $importId = (int) $importResponse->json('data.id');
+
+        $this->getJson("/api/imports/{$importId}")
+            ->assertOk()
+            ->assertJsonPath('data.status', 'completed');
+
+        $searchQuery = http_build_query([
+            'city' => 'Barcelona',
             'check_in' => '2026-10-10',
             'check_out' => '2026-10-15',
-            'max_guests' => 2,
-            'price' => 50000,
-            'currency' => 'EUR',
-            'available_units' => 1,
-            'expires_at' => now()->addDay()->toIso8601String(),
-        ]],
-    ];
+            'guests' => 2,
+        ]);
 
-    $import = $this->postJson('/api/imports', $payload)->assertAccepted();
-    $this->getJson('/api/imports/'.$import->json('data.id'))
-        ->assertOk()->assertJsonPath('data.status', 'completed');
+        $searchResponse = $this->getJson("/api/properties?{$searchQuery}");
+        $searchResponse->assertOk()->assertJsonCount(1, 'data');
 
-    $url = '/api/properties?city=Barcelona&check_in=2026-10-10&check_out=2026-10-15&guests=2';
-    $search = $this->getJson($url)->assertOk()->assertJsonCount(1, 'data');
-    $offerId = $search->json('data.0.best_offer.id');
-    $reservationUrl = "/api/offers/{$offerId}/reservations";
-    $customer = [
-        'client_reference' => 'customer-order',
-        'customer_name' => 'John Smith',
-        'customer_email' => 'john@example.com',
-    ];
+        $offerId = (int) $searchResponse->json('data.0.best_offer.id');
+        $reservationEndpoint = "/api/offers/{$offerId}/reservations";
 
-    $booking = $this->postJson($reservationUrl, $customer)->assertCreated();
-    $this->postJson($reservationUrl, $customer)
-        ->assertOk()->assertJsonPath('data.id', $booking->json('data.id'));
-    $this->postJson($reservationUrl, [...$customer, 'client_reference' => 'another-order'])
-        ->assertConflict()->assertJsonPath('code', 'offer_unavailable');
-    $this->getJson($url)->assertOk()->assertJsonCount(0, 'data');
-    $this->assertDatabaseCount('reservations', 1);
+        $customerOrder = validReservationPayload([
+            'client_reference' => 'customer-order-1',
+            'customer_name' => 'John Smith',
+            'customer_email' => 'john@example.com',
+        ]);
+
+        $bookingResponse = $this->postJson($reservationEndpoint, $customerOrder);
+        $bookingResponse->assertCreated();
+        $bookingId = (int) $bookingResponse->json('data.id');
+
+        $this->postJson($reservationEndpoint, $customerOrder)
+            ->assertOk()
+            ->assertJsonPath('data.id', $bookingId);
+
+        $competingCustomerOrder = array_merge($customerOrder, [
+            'client_reference' => 'competing-order-2',
+        ]);
+
+        $this->postJson($reservationEndpoint, $competingCustomerOrder)
+            ->assertConflict()
+            ->assertJsonPath('code', 'offer_unavailable');
+
+        $this->getJson("/api/properties?{$searchQuery}")
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+
+        $this->assertDatabaseCount('reservations', 1);
+    });
 });
